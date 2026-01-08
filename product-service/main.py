@@ -1,34 +1,58 @@
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import List
+import os
+import time
+from fastapi import FastAPI
+from sqlalchemy import Column, Integer, String, Float, create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import OperationalError
 
-app = FastAPI(title="Product Service API")
+# Pobieramy adres bazy
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://user:password@db:5432/products_db")
 
-# Model danych
-class Product(BaseModel):
-    id: int
-    name: str
-    description: str
-    price: float
+# Funkcja tworząca połączenie z bazą z prostym mechanizmem ponawiania (retry)
+# Chmura/Kontenery potrzebują sekundy na "rozruch" bazy danych
+def get_engine():
+    engine = create_engine(DATABASE_URL)
+    for _ in range(5):
+        try:
+            engine.connect()
+            return engine
+        except OperationalError:
+            print("Czekam na bazę danych...")
+            time.sleep(2)
+    return engine
 
-# Dane testowe (Mock)
-products_db = [
-    {"id": 1, "name": "Laptop Pro", "description": "Mocny sprzęt do pracy", "price": 4500.0},
-    {"id": 2, "name": "Mysz Bezprzewodowa", "description": "Cicha i precyzyjna", "price": 120.0},
-    {"id": 3, "name": "Monitor 4K", "description": "Matryca IPS 27 cali", "price": 1800.0},
-]
+engine = get_engine()
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+# Model bazy danych
+class ProductModel(Base):
+    __tablename__ = "products"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String)
+    price = Column(Float)
+
+# Tworzymy tabele
+Base.metadata.create_all(bind=engine)
+
+app = FastAPI()
+
+@app.get("/products")
+def get_products():
+    db = SessionLocal()
+    try:
+        # Jeśli baza pusta, dodajmy rekordy testowe
+        if not db.query(ProductModel).first():
+            db.add(ProductModel(name="Laptop z Bazy", price=4999.99))
+            db.add(ProductModel(name="Myszka z Bazy", price=150.0))
+            db.commit()
+        
+        products = db.query(ProductModel).all()
+        return products
+    finally:
+        db.close()
 
 @app.get("/")
-def read_root():
-    return {"message": "Product Service is running"}
-
-@app.get("/products", response_model=List[Product])
-def get_products():
-    return products_db
-
-@app.get("/products/{product_id}", response_model=Product)
-def get_product(product_id: int):
-    product = next((p for p in products_db if p["id"] == product_id), None)
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
-    return product
+def health_check():
+    return {"status": "ok", "database": "connected"}
