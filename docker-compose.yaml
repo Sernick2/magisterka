@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  db:
+  product_db:
     image: postgres:15
     container_name: product_db
     restart: always
@@ -10,7 +10,24 @@ services:
       POSTGRES_PASSWORD: password
       POSTGRES_DB: products_db
     ports:
-      - "5432:5432"
+      - "5433:5432"
+
+  order_db:
+    image: postgres:15
+    container_name: order_db
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: orders_db
+    ports:
+      - "5434:5432"
+  
+  redis:
+    image: redis:alpine
+    container_name: redis_cache
+    ports:
+      - "6379:6379"
 
   product-service:
     build: ./product-service
@@ -18,6 +35,20 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql://user:password@db:5432/products_db
+      DATABASE_URL: postgresql://user:password@product_db:5432/products_db
+      REDIS_URL: redis://redis:6379/0
     depends_on:
-      - db
+      - product_db
+      - redis
+
+  order-service:
+    build: ./order-service
+    container_name: order_service
+    ports:
+      - "8001:8000" # Ten serwis wystawimy na porcie 8001
+    environment:
+      DATABASE_URL: postgresql://user:password@order_db:5432/orders_db
+      PRODUCT_SERVICE_URL: http://product-service:8000
+    depends_on:
+      - order_db
+      - product-service
