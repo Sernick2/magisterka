@@ -49,7 +49,10 @@ class ProductModel(Base):
 Base.metadata.create_all(bind=engine)
 init_db
 
-app = FastAPI(title="Product Service")
+app = FastAPI(
+    title="Product Service",
+    root_path="/product-service"
+)
 
 @app.get("/products")
 def get_products():

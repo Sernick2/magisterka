@@ -28,6 +28,13 @@ services:
     container_name: redis_cache
     ports:
       - "6379:6379"
+  
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"   # Port komunikacji
+      - "15672:15672" # Panel WWW (użytkownik: guest, hasło: guest)
 
   product-service:
     build: ./product-service
@@ -52,3 +59,23 @@ services:
     depends_on:
       - order_db
       - product-service
+  
+  notification-service:
+    build: ./notification-service
+    container_name: notification_service
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      PYTHONUNBUFFERED: "1"
+    depends_on:
+      - rabbitmq
+
+  gateway:
+    image: nginx:latest
+    container_name: api_gateway
+    volumes:
+      - ./gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "80:80"
+    depends_on:
+      - product-service
+      - order-service

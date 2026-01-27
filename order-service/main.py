@@ -1,4 +1,4 @@
-import os, time, requests
+import os, time, requests, pika
 from fastapi import FastAPI, HTTPException
 from sqlalchemy import Column, Integer, String, create_engine
 from sqlalchemy.ext.declarative import declarative_base
@@ -22,6 +22,16 @@ def get_engine():
             time.sleep(3)
     return temp_engine
 
+def send_to_queue(message):
+    try:
+        connection = pika.BlockingConnection(pika.ConnectionParameters('rabbitmq'))
+        channel = connection.channel()
+        channel.queue_declare(queue='order_notifications')
+        channel.basic_publish(exchange='', routing_key='order_notifications', body=message)
+        connection.close()
+    except Exception as e:
+        print(f"Błąd kolejki: {e}")
+
 engine = get_engine()
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -35,7 +45,10 @@ class OrderModel(Base):
 # Tworzenie tabeli
 Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Order Service")
+app = FastAPI(
+    title="Order Service",
+    root_path="/order-service"
+)
 
 @app.get("/")
 def health():
@@ -58,6 +71,7 @@ def create_order(product_id: int):
         db.add(new_order)
         db.commit()
         db.refresh(new_order)
+        send_to_queue(f"Zamówienie nr {new_order.id} na produkt {product_id}")
         return {"message": "Zamówienie złożone!", "order": new_order}
     finally:
         db.close()
